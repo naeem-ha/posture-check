@@ -15,7 +15,7 @@ def calculate_angle(a, b, c):
 
 def check_lifting_posture(pose_landmarks, threshold=150):
     """
-    Check if the lifting posture is good based on knee bend.
+    Check if the lifting posture is good based on knee bend and body position.
     
     Args:
         pose_landmarks: MediaPipe pose landmarks object
@@ -42,34 +42,79 @@ def check_lifting_posture(pose_landmarks, threshold=150):
         right_knee = get_point(26)  # RIGHT_KNEE
         right_ankle = get_point(28) # RIGHT_ANKLE
         
+        # Get upper body points for bend detection
+        left_shoulder = get_point(11)   # LEFT_SHOULDER
+        right_shoulder = get_point(12)  # RIGHT_SHOULDER
+        nose = get_point(0)             # NOSE
+        
         # Calculate knee angles for both legs
         left_knee_angle = calculate_angle(left_hip, left_knee, left_ankle)
         right_knee_angle = calculate_angle(right_hip, right_knee, right_ankle)
-        
-        # Use the average of both knee angles
         avg_knee_angle = (left_knee_angle + right_knee_angle) / 2
         
-        # Determine if posture is good
-        is_good_posture = avg_knee_angle < threshold
+        # Calculate if person is bending forward
+        avg_shoulder_y = (left_shoulder[1] + right_shoulder[1]) / 2
+        avg_hip_y = (left_hip[1] + right_hip[1]) / 2
+        nose_y = nose[1]
         
-        # Generate appropriate message
-        if is_good_posture:
-            message = "Good posture - Knees bent"
+        # Check forward bend indicators (loosened criteria)
+        shoulder_hip_distance = avg_hip_y - avg_shoulder_y
+        nose_shoulder_distance = nose_y - avg_shoulder_y
+        
+        # Reduced threshold from 0.5 to 0.3 - more sensitive to forward bend
+        is_bending_forward = nose_shoulder_distance > shoulder_hip_distance * 0.3
+        
+        # Alternative check: if nose is below shoulder level
+        is_head_low = nose_y > avg_shoulder_y + 0.05  # Small margin for normal standing
+        
+        # Check if torso is tilted (shoulder to hip angle)
+        torso_vertical_offset = abs((left_shoulder[0] + right_shoulder[0]) / 2 - 
+                                   (left_hip[0] + right_hip[0]) / 2)
+        is_torso_tilted = torso_vertical_offset > 0.08  # Reduced from implicit check
+        
+        # Combine all bending indicators - person is likely lifting if ANY are true
+        is_attempting_lift = is_bending_forward or is_head_low or is_torso_tilted
+        
+        # Determine posture status based on context
+        if avg_knee_angle > 165:  # Reduced from 170 - slightly bent knees still count as "straight"
+            if is_attempting_lift:
+                # Person is bending to pick something with straight legs - BAD
+                is_good_posture = False
+                message = "Bad posture - Bend your knees when lifting!"
+            else:
+                # Person is just standing upright - GOOD
+                is_good_posture = True
+                message = "Good posture - Standing upright"
+        elif avg_knee_angle < threshold:
+            # Knees are bent properly
+            is_good_posture = True
+            if is_attempting_lift:
+                # Person is squatting/lifting properly - GOOD
+                message = "Good posture - Proper squatting technique"
+            else:
+                # Just standing with bent knees - GOOD
+                message = "Good posture - Knees bent"
         else:
-            message = "Bad posture - Bend your knees!"
+            # Knees partially bent (between threshold and 165)
+            if is_attempting_lift:
+                is_good_posture = False
+                message = "Bad posture - Bend knees more when lifting"
+            else:
+                is_good_posture = True
+                message = "Good posture"
         
         return is_good_posture, avg_knee_angle, message
         
     except Exception as e:
         return None, None, f"Error detecting posture: {str(e)}"
 
-"""# Code to use the function with MediaPipe Pose
-
+""" Code to use the function with MediaPipe Pose
 import cv2
 import mediapipe as mp
 
 mp_pose = mp.solutions.pose
 pose = mp_pose.Pose()
+mp_drawing = mp.solutions.drawing_utils
 
 cap = cv2.VideoCapture(0)
 
@@ -83,6 +128,9 @@ while cap.isOpened():
     image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
     
     if results.pose_landmarks:
+        # Draw pose landmarks
+        mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+        
         # Call the function
         is_good, angle, message = check_lifting_posture(results.pose_landmarks)
         
@@ -101,5 +149,4 @@ while cap.isOpened():
 
 cap.release()
 cv2.destroyAllWindows()
-
 """
