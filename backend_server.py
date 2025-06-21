@@ -73,6 +73,8 @@ def posture_check():
 
             if results.pose_landmarks:
                 # Call our posture checking function
+                # Draw pose landmarks
+                mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
                 is_good, angle, message = check_lifting_posture(results.pose_landmarks)
 
                 if is_good is not None:
